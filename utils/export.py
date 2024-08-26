@@ -140,3 +140,9 @@ def version2_export(model, filepath, group_size=64):
     # write to binary file
     out_file.close()
     print(f"wrote {filepath}")
+
+
+if __name__ == '__main__':
+    model = torch.load('/home/youssef/.llama/checkpoints/Meta-Llama3.1-8B/consolidated.00.pth')
+
+    version1_export(model, '../model.bin')
