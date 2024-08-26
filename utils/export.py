@@ -10,6 +10,46 @@ import numpy as np
 import torch
 from torch import nn
 
+from utils.model import ModelArgs, Transformer
+
+
+def serialize_fp32(file, tensor):
+    """ writes one fp32 tensor to file that is open in wb mode """
+    d = tensor.detach().cpu().view(-1).to(torch.float32).numpy()
+    b = struct.pack(f'{len(d)}f', *d)
+    file.write(b)
+
+def serialize_int8(file, tensor):
+    """ writes one int8 tensor to file that is open in wb mode """
+    d = tensor.detach().cpu().view(-1).numpy().astype(np.int8)
+    b = struct.pack(f'{len(d)}b', *d)
+    file.write(b)
+
+def quantize_q80(w, group_size):
+    """
+    takes a tensor and returns the Q8_0 quantized version
+    i.e. symmetric quantization into int8, range [-127,127]
+    """
+    assert w.numel() % group_size == 0
+    ori_shape = w.shape
+    w = w.float() # convert to float32
+    w = w.reshape(-1, group_size)
+    # find the max in each group
+    wmax = torch.abs(w).max(dim=1).values
+    # calculate the scaling factor such that float = quant * scale
+    scale = wmax / 127.0
+    # scale into range [-127, 127]
+    quant = w / scale[:,None]
+    # round to nearest integer
+    int8val = torch.round(quant).to(torch.int8)
+    # dequantize by rescaling
+    fp32val = (int8val.float() * scale[:,None]).view(-1)
+    fp32valr = fp32val.reshape(-1, group_size)
+    # calculate the max error in each group
+    err = torch.abs(fp32valr - w).max(dim=1).values
+    # find the max error across all groups
+    maxerr = err.max().item()
+    return int8val, scale, maxerr
 
 def version1_export(model, filepath):
     """
@@ -141,8 +181,22 @@ def version2_export(model, filepath, group_size=64):
     out_file.close()
     print(f"wrote {filepath}")
 
+def load_checkpoint(checkpoint):
+
+    # load the provided model checkpoint
+    checkpoint_dict = torch.load(checkpoint, map_location='cpu')
+    gptconf = ModelArgs(**{"dim": 4096, "multiple_of": 256, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_size": 32000})
+    model = Transformer(gptconf)
+    state_dict = checkpoint_dict['model']
+    unwanted_prefix = '_orig_mod.'
+    for k,v in list(state_dict.items()):
+        if k.startswith(unwanted_prefix):
+            state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+    model.load_state_dict(state_dict, strict=False)
+    model.eval()
+    return model
 
 if __name__ == '__main__':
-    model = torch.load('/home/youssef/.llama/checkpoints/Meta-Llama3.1-8B/consolidated.00.pth')
+    model = load_checkpoint('../llama2_model_weights/consolidated.00.pth')
 
     version1_export(model, '../model.bin')
