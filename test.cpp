@@ -64,8 +64,30 @@ void test_softmax() {
     }
 }
 
+void test_tokenizer(){
+    Tokenizer tokenizer("../llama2_model_weights/tokenizer.bin", 32000);  // Adjust vocab size as needed
+
+    std::string text = "Hello, world!";
+    std::vector<int> tokens = tokenizer.encode(text);
+
+    std::cout << "Encoded tokens: ";
+    for (int token : tokens) {
+        std::cout << token << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "Decoded text: ";
+    int prev_token = 1;  // Assume BOS token
+    for (int token : tokens) {
+        std::string piece = tokenizer.decode(prev_token, token);
+        Tokenizer::safePrintf(piece);
+        prev_token = token;
+    }
+    std::cout << std::endl;
+}
 int main() {
     test_naive_matmul();
     test_softmax();
+    test_tokenizer();
     return 0;
 }
