@@ -19,20 +19,40 @@
 using namespace std;
 int GS = 0;
 
-typedef struct {
-    int dim; // transformer dimension
-    int hidden_dim; // for ffn layers
-    int n_layers; // number of layers
-    int n_heads; // number of query heads
-    int n_kv_heads; // number of key/value heads (can be < query heads because of multiquery)
-    int vocab_size; // vocabulary size, usually 256 (byte-level)
-    int seq_len; // max sequence length
-} Config;
+
 
 typedef struct {
     int8_t* q;    // quantized values
     float* s; // scaling factors
 } QuantizedTensor;
+
+void quantize(QuantizedTensor *qx, float* x, int n) {
+    int num_groups = n / GS;
+    float Q_MAX = 127.0f;
+
+    for (int group = 0; group < num_groups; group++) {
+
+        // find the max absolute value in the current group
+        float wmax = 0.0;
+        for (int i = 0; i < GS; i++) {
+            float val = fabs(x[group * GS + i]);
+            if (val > wmax) {
+                wmax = val;
+            }
+        }
+
+        // calculate and write the scaling factor
+        float scale = wmax / Q_MAX;
+        qx->s[group] = scale;
+
+        // calculate and write the quantized values
+        for (int i = 0; i < GS; i++) {
+            float quant_value = x[group * GS + i] / scale; // scale
+            int8_t quantized = (int8_t) round(quant_value); // round and clamp
+            qx->q[group * GS + i] = quantized;
+        }
+    }
+}
 
 void dequantize(QuantizedTensor *qx, float* x, int n) {
     for (int i = 0; i < n; i++) {
@@ -40,7 +60,7 @@ void dequantize(QuantizedTensor *qx, float* x, int n) {
     }
 }
 
-void naive_matmul(float *out, float *x, float *y, int x_row, int x_col, int y_row, int y_col)
+void naive_matmul(float *out, const float *x, const float *y, int x_row, int x_col, int y_col)
 {
     for (int i = 0; i < x_row; i++)
     {
@@ -54,10 +74,25 @@ void naive_matmul(float *out, float *x, float *y, int x_row, int x_col, int y_ro
     }
 }
 
+void naive_matmul_quantized(float *out, const QuantizedTensor *x, const QuantizedTensor *y, int x_row, int x_col, int y_col)
+{
+    for (int i = 0; i < x_row; i++)
+    {
+        for (int j = 0; j < y_col; j++)
+        {
+            for (int k = 0; k < x_col; k++)
+            {
+                out[(i * y_col) + j] += x->q[(i * x_col) + k] * y->q[(y_col * k) + j];
+            }
+        }
+    }
+}
+
+
 
 void softmax(float *out, float *input, int row, int col)
 {
-
+    //todo numerical stability
     for (int i = 0; i < row; i++)
     {
         // for every row, sum the exp of items
@@ -78,30 +113,40 @@ void softmax(float *out, float *input, int row, int col)
 
 }
 
-void self_attn(float *out, float *K, float *Q, float *V, int T, int C, int head_size)
-{
+void rmsnorm(float* out, float* activations, float* g, int n) {
+    float sum = 0;
+    for (int i = 0; i < n; i++){
+        sum += activations[i]*activations[i];
+    }
+    sum = sqrt((sum / n) + 1e-5f);
+    for (int i = 0; i < n; i++){
+        out[i] = activations[i] * g[i] / sum;
+    }
 }
+typedef struct {
+    int dim; // transformer dimension
+    int hidden_dim; // for ffn layers
+    int n_layers; // number of layers
+    int n_heads; // number of query heads
+    int n_kv_heads; // number of key/value heads (can be < query heads because of multiquery)
+    int vocab_size; // vocabulary size, usually 256 (byte-level)
+    int seq_len; // max sequence length
+} Config;
 
-void attention_forward(float* out, float* input, int B, int T, int C, int head_size){
+typedef struct {
+    float* x;
+    float* x_norm;
+    float* q;
+    float* k;
+    float* v;
+    QuantizedTensor* x_quantized;
 
-}
-void attention_layer(float *out, float *input, int T, int C, int head_size){
-    // generate K, Q, V from input
-    float *K;
-    float *Q;
-    float *V; // (T,C)
-    float *Wk;
-    float *Wq;
-    float *Wv;                              // (T,)
-    naive_matmul(K, Wk, input, 3, 4, 4, 5); // (C, C) x (C, T), where inner dim should be divided into heads.
-    naive_matmul(Q, Wq, input, 3, 4, 5, 6);
-    naive_matmul(V, Wv, input, 3, 4, 5, 6);
-    // self_attn(out, K, Q, V);
-}
-
+} State;
 
 class Transformer {
 private:
+    Config config;
+    State s;
     float* attn_norm;
     float* fnn_norm;
     float* norm;
@@ -133,7 +178,6 @@ public:
     }
 
     void load_weights(const std::string& filepath) {
-        Config config;
         FILE *file = fopen(filepath.c_str(), "rb");
         if (!file) {
             std::cerr << "Couldn't open file " << filepath << std::endl;
@@ -205,8 +249,79 @@ public:
 
         w_cls = shared_classifier ? q_tokens : init_quantized_tensors(&ptr, 1, config.dim * config.vocab_size);
     }
-    void forward(std::vector<int> tokens){
 
+    void attention_head(){
+
+    }
+
+    std::vector<float> forward(const float* token_embedding, int T){
+        int hs = config.dim / config.n_heads;
+        std::copy(token_embedding, token_embedding + config.dim, s.x);
+
+        for (int layer=0; layer<config.n_layers; layer++){
+
+            //rmsnorm
+            rmsnorm(s.x_norm, s.x, attn_norm+config.dim*layer,config.dim);
+
+            //extract q,k,v
+            quantize(s.x_quantized, s.x,config.dim);
+            naive_matmul_quantized(s.q, s.x_quantized, wq + layer, 1, config.dim, config.dim);
+            naive_matmul_quantized(s.k, s.x_quantized, wk + layer, 1, config.dim, config.n_kv_heads * hs);
+            naive_matmul_quantized(s.v, s.x_quantized, wv + layer, 1, config.dim, config.n_kv_heads * hs);
+
+            // rope
+
+            for (int head=0; head<hs; head++){
+                attention_head();
+            }
+            // cache state (1)
+            // attn norm
+            // attention
+            // add attention output with (1) (residual)
+
+            // cache state (2)
+            // fnn norm
+            // w1 (SwiGLU) w2 (SwiGLU) w3 (SwiGLU)
+            // add output with (2) (residual)
+        }
+        // norm
+        // wcls
+        // softmax
+
+
+    }
+
+    int sample(std::vector<float> logits){
+        return 2;
+    }
+
+    void generate(const std::vector<int>& tokens, int max_step){
+        //embedding
+        std::vector<float> embedded(0);
+        auto C = config.dim;
+
+        int t = 0;
+        int next = tokens[0];
+
+        while (t<max_step) {
+            std::cout<<next;
+
+            const float* current_token_embedding = token_embeddings +  next * config.dim; //(4096, )
+//            std::copy(start, start + config.dim, embedded.data() + t * config.dim);
+//            embedded.insert(embedded.end(), start, start + config.dim);
+
+            auto logits = forward(current_token_embedding, t+1);
+
+            if (t < tokens.size()-1){
+                next = tokens[t+1];
+            } else {
+                next = sample(logits);
+            }
+            if (next == 1){ // EOS predicted
+                break;
+            }
+            t++;
+        }
     }
 };
 
@@ -222,7 +337,7 @@ int main()
 
     auto* transformer = new Transformer();
     transformer->load_weights("../llama2_model_weights/model.bin");
-    transformer->forward(tokens);
+    transformer->generate(tokens, 256);
 
 }
 #endif

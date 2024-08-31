@@ -24,7 +24,7 @@ void test_naive_matmul() {
     float out[x_row * y_col] = {0};
     float expected[x_row * y_col] = {6, 9, 12, 12, 17, 22, 9, 14, 19};
 
-    naive_matmul(out, x, y, x_row, x_col, y_row, y_col);
+    naive_matmul(out, x, y, x_row, x_col, y_col);
 
     bool test_passed = true;
     for (int i = 0; i < x_row * y_col; i++) {
