@@ -45,11 +45,11 @@ void test_naive_matmul_quantized() {
 
     float expected[x_row * y_col] = {6, 9, 12, 12, 15, 18, 17, 22, 27};
 
-    QuantizedTensor* qx = new QuantizedTensor;
+    auto* qx = new QuantizedTensor;
     qx->q = new int8_t[x_row * x_col];
     qx->s = new float[(x_row * x_col) / GS];
 
-    QuantizedTensor* qy = new QuantizedTensor;
+    auto* qy = new QuantizedTensor;
     qy->q = new int8_t[y_row * y_col];
     qy->s = new float[(y_row * y_col) / GS];
 
