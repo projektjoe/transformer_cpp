@@ -46,17 +46,17 @@ void test_naive_matmul_quantized() {
     float expected[x_row * y_col] = {6, 9, 12, 12, 15, 18, 17, 22, 27};
 
     auto* qx = new QuantizedTensor;
-    qx->q = new int8_t[x_row * x_col];
-    qx->s = new float[(x_row * x_col) / GS];
+    qx->q = vector<int8_t>(x_row * x_col);
+    qx->s = vector<float>((x_row * x_col) / GS);
 
     auto* qy = new QuantizedTensor;
-    qy->q = new int8_t[y_row * y_col];
-    qy->s = new float[(y_row * y_col) / GS];
+    qy->q = vector<int8_t>(y_row * y_col);
+    qy->s = vector<float>((y_row * y_col) / GS);
 
     quantize(qx, x, x_row * x_col);
     quantize(qy, y, y_row * y_col);
 
-    float out[x_row * y_col] = {0};
+    vector<float> out = vector<float>(x_row * y_col,0);
     naive_matmul_quantized(out, qx, qy, x_row, x_col, y_col);
 
     bool test_passed = true;
@@ -72,11 +72,6 @@ void test_naive_matmul_quantized() {
         std::cout << "naive_matmul_quantized test passed." << std::endl;
     }
 
-    // Cleanup
-    delete[] qx->q;
-    delete[] qx->s;
-    delete[] qy->q;
-    delete[] qy->s;
 }
 
 void test_softmax() {
