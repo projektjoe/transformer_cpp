@@ -183,19 +183,24 @@ private:
 public:
     QuantizedTensor* init_quantized_tensors(void** ptr, int n, int size_each) {
         auto* res = new QuantizedTensor[n];
-        int8_t* p_int8 = static_cast<int8_t*>(*ptr);
-        float* p_float = reinterpret_cast<float*>(p_int8 + n * size_each);
+        char* p = static_cast<char*>(*ptr);
 
         for (int i = 0; i < n; i++) {
-            res[i].q.assign(p_int8, p_int8 + size_each);
-            res[i].s.assign(p_float, p_float + size_each / GS);
-            p_int8 += size_each;
-            p_float += size_each / GS;
+            // Map quantized int8 values
+            int8_t* q_ptr = reinterpret_cast<int8_t*>(p);
+            res[i].q.assign(q_ptr, q_ptr + size_each);
+            p += size_each;
+
+            // Map scale factors
+            float* s_ptr = reinterpret_cast<float*>(p);
+            res[i].s.assign(s_ptr, s_ptr + size_each / GS);
+            p += size_each / GS * sizeof(float);
         }
 
-        *ptr = static_cast<void*>(p_float); // Update the pointer
+        *ptr = p;  // Update the pointer
         return res;
     }
+
     void load_weights(const std::string& filepath) {
         FILE *file = fopen(filepath.c_str(), "rb");
         if (!file) {
@@ -287,8 +292,8 @@ public:
             //extract q,k,v
             quantize(s.x_quantized, s.x,config.dim);
             naive_matmul_quantized(s.q, s.x_quantized, &wq[layer], 1, config.dim, config.dim);
-            naive_matmul_quantized(s.k, s.x_quantized, wk + layer, 1, config.dim, config.n_kv_heads * hs);
-            naive_matmul_quantized(s.v, s.x_quantized, wv + layer, 1, config.dim, config.n_kv_heads * hs);
+            naive_matmul_quantized(s.k, s.x_quantized, &wk[layer], 1, config.dim, config.n_kv_heads * hs);
+            naive_matmul_quantized(s.v, s.x_quantized, &wv[layer], 1, config.dim, config.n_kv_heads * hs);
 
             // rope
 
