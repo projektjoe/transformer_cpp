@@ -138,7 +138,7 @@ void test_tokenizer(){
 int main() {
     test_naive_matmul();
     test_softmax();
-    test_tokenizer();
     test_quantized_matmul();
+    test_tokenizer();
     return 0;
 }
