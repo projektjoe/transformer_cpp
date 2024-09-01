@@ -1,11 +1,8 @@
 #define TESTING
 #include "main.cpp"
 #include <iostream>
-#include <cmath>  // For std::abs
+#include <cmath>
 
-// Declare functions
-
-// Helper function to compare floating-point numbers
 bool float_equal(float a, float b, float epsilon = 1e-5) {
     return std::fabs(a - b) < epsilon;
 }
@@ -20,7 +17,7 @@ void test_naive_matmul() {
     float x[x_row * x_col] = {2, 1, 0, 3, 1, 4};
     float y[y_row * y_col] = {1, 2, 3, 4, 5, 6};
     float out[x_row * y_col] = {0};
-    float expected[x_row * y_col] = {6, 9, 12, 12, 17, 22, 9, 14, 19};
+    float expected[x_row * y_col] = {6, 9, 12, 12, 15, 18, 17, 22, 27};
 
     naive_matmul(out, x, y, x_row, x_col, y_col);
 
@@ -43,31 +40,27 @@ void test_naive_matmul_quantized() {
     constexpr int y_col = 3;
     GS = 2;
 
-    // Initialize input matrices
     float x[x_row * x_col] = {2, 1, 0, 3, 1, 4};
     float y[y_row * y_col] = {1, 2, 3, 4, 5, 6};
 
-    // Expected output from naive_matmul
-    float expected[x_row * y_col] = {6, 9, 12, 12, 15, 18, 16, 22, 27};
+    float expected[x_row * y_col] = {6, 9, 12, 12, 15, 18, 17, 22, 27};
 
-    // Allocate space for quantized tensors
-    QuantizedTensor* qx;
+    QuantizedTensor* qx = new QuantizedTensor;
     qx->q = new int8_t[x_row * x_col];
     qx->s = new float[(x_row * x_col) / GS];
-    QuantizedTensor* qy;
+
+    QuantizedTensor* qy = new QuantizedTensor;
     qy->q = new int8_t[y_row * y_col];
     qy->s = new float[(y_row * y_col) / GS];
 
-    // Quantize the input matrices
     quantize(qx, x, x_row * x_col);
     quantize(qy, y, y_row * y_col);
 
-    // Perform quantized matrix multiplication
     float out[x_row * y_col] = {0};
     naive_matmul_quantized(out, qx, qy, x_row, x_col, y_col);
 
-    // Check if the output is close to the expected output
     bool test_passed = true;
+
     for (int i = 0; i < x_row * y_col; i++) {
         if (!float_equal(out[i], expected[i],2)) {
 //            std::cout << "naive_matmul_quantized test failed at index " << i << ": expected " << expected[i] << ", got " << out[i] << std::endl;
