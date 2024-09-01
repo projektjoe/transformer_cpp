@@ -4,8 +4,6 @@
 #include <cmath>  // For std::abs
 
 // Declare functions
-void naive_matmul(float *out, float *x, float *y, int x_row, int x_col, int y_row, int y_col);
-void softmax(float *out, float *input, int row, int col);
 
 // Helper function to compare floating-point numbers
 bool float_equal(float a, float b, float epsilon = 1e-5) {
@@ -38,7 +36,59 @@ void test_naive_matmul() {
         std::cout << "naive_matmul test passed." << std::endl;
     }
 }
+void test_quantized_matmul() {
+    constexpr int x_row = 4;
+    constexpr int x_col = 4;
+    constexpr int y_row = 4;
+    constexpr int y_col = 4;
 
+    float x[x_row * x_col] = {2, 1, 0, 3, 1, 4, 2, 1, 0, 3, 1, 4, 2, 1, 0, 3};
+    float y[y_row * y_col] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+
+    float out_regular[x_row * y_col] = {0};
+    float out_quantized[x_row * y_col] = {0};
+
+    // Perform regular matrix multiplication
+    naive_matmul(out_regular, x, y, x_row, x_col, y_col);
+
+    // Quantize inputs
+    QuantizedTensor qx, qy;
+    qx.q = new int8_t[x_row * x_col];
+    qx.s = new float[(x_row * x_col + GS - 1) / GS];
+    qy.q = new int8_t[y_row * y_col];
+    qy.s = new float[(y_row * y_col + GS - 1) / GS];
+
+    quantize(&qx, x, x_row * x_col);
+    quantize(&qy, y, y_row * y_col);
+
+    // Perform quantized matrix multiplication
+    naive_matmul_quantized(out_quantized, &qx, &qy, x_row, x_col, y_col);
+
+    // Compare results
+    bool test_passed = true;
+    float max_diff = 0.0f;
+    for (int i = 0; i < x_row * y_col; i++) {
+        float diff = std::abs(out_regular[i] - out_quantized[i]);
+        max_diff = std::max(max_diff, diff);
+        if (!float_equal(out_regular[i], out_quantized[i], 0.1f)) {
+            std::cout << "Quantized matmul test failed at index " << i << ": "
+                      << "expected " << out_regular[i] << ", got " << out_quantized[i] << std::endl;
+            test_passed = false;
+        }
+    }
+
+    if (test_passed) {
+        std::cout << "Quantized matmul test passed. Maximum difference: " << max_diff << std::endl;
+    } else {
+        std::cout << "Quantized matmul test failed. Maximum difference: " << max_diff << std::endl;
+    }
+
+    // Clean up
+    delete[] qx.q;
+    delete[] qx.s;
+    delete[] qy.q;
+    delete[] qy.s;
+}
 void test_softmax() {
     constexpr int row = 2;
     constexpr int col = 3;
@@ -89,5 +139,6 @@ int main() {
     test_naive_matmul();
     test_softmax();
     test_tokenizer();
+    test_quantized_matmul();
     return 0;
 }

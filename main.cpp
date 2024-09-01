@@ -76,13 +76,16 @@ void naive_matmul(float *out, const float *x, const float *y, int x_row, int x_c
 
 void naive_matmul_quantized(float *out, const QuantizedTensor *x, const QuantizedTensor *y, int x_row, int x_col, int y_col)
 {
+    int N_x = x_row*x_col;
+    int N_y = x_col*y_col;
+
     for (int i = 0; i < x_row; i++)
     {
         for (int j = 0; j < y_col; j++)
         {
             for (int k = 0; k < x_col; k++)
             {
-                out[(i * y_col) + j] += x->q[(i * x_col) + k] * y->q[(y_col * k) + j];
+                out[(i * y_col) + j] += x->q[(i * x_col) + k] * y->q[(y_col * k) + j] * x->s[(((i * x_col) + k)*GS/N_x)] * y->s[((y_col * k) + j)*GS/N_y];
             }
         }
     }
