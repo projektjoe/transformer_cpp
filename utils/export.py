@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from utils.model import ModelArgs, Transformer
+from model import ModelArgs, Transformer
 
 
 def serialize_fp32(file, tensor):
@@ -182,12 +182,11 @@ def version2_export(model, filepath, group_size=64):
     print(f"wrote {filepath}")
 
 def load_checkpoint(checkpoint):
-
     # load the provided model checkpoint
     checkpoint_dict = torch.load(checkpoint, map_location='cpu')
     gptconf = ModelArgs(**{"dim": 4096, "multiple_of": 256, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_size": 32000})
     model = Transformer(gptconf)
-    state_dict = checkpoint_dict['model']
+    state_dict = checkpoint_dict
     unwanted_prefix = '_orig_mod.'
     for k,v in list(state_dict.items()):
         if k.startswith(unwanted_prefix):
@@ -199,4 +198,4 @@ def load_checkpoint(checkpoint):
 if __name__ == '__main__':
     model = load_checkpoint('../llama2_model_weights/consolidated.00.pth')
 
-    version1_export(model, '../model.bin')
+    version2_export(model, '../llama2_model_weights/model.bin')
