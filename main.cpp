@@ -20,10 +20,9 @@ using namespace std;
 int GS = 0;
 
 
-
 typedef struct {
-    int8_t* q;    // quantized values
-    float* s; // scaling factors
+    std::vector<int8_t> q;  // quantized values
+    std::vector<float> s;   // scaling factors
 } QuantizedTensor;
 
 void quantize(QuantizedTensor *qx, float* x, int n) {
@@ -74,7 +73,7 @@ void naive_matmul(float *out, const float *x, const float *y, int x_row, int x_c
     }
 }
 
-void naive_matmul_quantized(float *out, const QuantizedTensor *x, const QuantizedTensor *y, int x_row, int x_col, int y_col)
+void naive_matmul_quantized(vector<float> &out, const QuantizedTensor *x, const QuantizedTensor *y, int x_row, int x_col, int y_col)
 {
     int N_x = x_row * x_col;
     int N_y = x_col * y_col;
@@ -140,9 +139,9 @@ class State {
 public:
     float* x;
     float* x_norm;
-    float* q;
-    float* k;
-    float* v;
+    vector<float> q;
+    vector<float> k;
+    vector<float> v;
     QuantizedTensor* x_quantized;
 
     State() = default;
@@ -150,18 +149,15 @@ public:
     State(int dim){
         x = new float[dim ];
         x_norm = new float[dim];
-        q = new float[dim ];
-        k = new float[dim ];
-        v = new float[dim];
+        q = vector<float>(dim);
+        k = vector<float>(dim);
+        v = vector<float>(dim);
         x_quantized = new QuantizedTensor();
     }
 
     ~State() {
         delete[] x;
         delete[] x_norm;
-        delete[] q;
-        delete[] k;
-        delete[] v;
         delete x_quantized;
     }
 
@@ -185,21 +181,21 @@ private:
     QuantizedTensor *w_cls;
 
 public:
-    QuantizedTensor *init_quantized_tensors(void **ptr, int n, int size_each) {
-        void *p = *ptr;
-        auto *res = new QuantizedTensor[n * sizeof(QuantizedTensor)];
+    QuantizedTensor* init_quantized_tensors(void** ptr, int n, int size_each) {
+        auto* res = new QuantizedTensor[n];
+        int8_t* p_int8 = static_cast<int8_t*>(*ptr);
+        float* p_float = reinterpret_cast<float*>(p_int8 + n * size_each);
+
         for (int i = 0; i < n; i++) {
-            /* map quantized int8 values */
-            res[i].q = (int8_t*)p;
-            p = (int8_t*)p + size_each;
-            /* map scale factors */
-            res[i].s = (float*)p;
-            p = (float*)p + size_each / GS;
+            res[i].q.assign(p_int8, p_int8 + size_each);
+            res[i].s.assign(p_float, p_float + size_each / GS);
+            p_int8 += size_each;
+            p_float += size_each / GS;
         }
-        *ptr = p; // advance ptr to current position
+
+        *ptr = static_cast<void*>(p_float); // Update the pointer
         return res;
     }
-
     void load_weights(const std::string& filepath) {
         FILE *file = fopen(filepath.c_str(), "rb");
         if (!file) {
@@ -290,7 +286,7 @@ public:
 
             //extract q,k,v
             quantize(s.x_quantized, s.x,config.dim);
-            naive_matmul_quantized(s.q, s.x_quantized, wq + layer, 1, config.dim, config.dim);
+            naive_matmul_quantized(s.q, s.x_quantized, &wq[layer], 1, config.dim, config.dim);
             naive_matmul_quantized(s.k, s.x_quantized, wk + layer, 1, config.dim, config.n_kv_heads * hs);
             naive_matmul_quantized(s.v, s.x_quantized, wv + layer, 1, config.dim, config.n_kv_heads * hs);
 
@@ -322,14 +318,13 @@ public:
     void init_state(){
         s.x = new float[config.dim];
         s.x_norm = new float[config.dim];
-        s.q = new float[config.dim];
-        s.k = new float[config.dim];
-        s.v = new float[config.dim];
-        s.x_quantized = new QuantizedTensor();
+        s.q = vector<float>(config.dim);
+        s.k = vector<float>(config.dim);
+        s.v = vector<float>(config.dim);
 
-        int num_groups = config.dim / GS;
-        s.x_quantized->q = new int8_t[config.dim];
-        s.x_quantized->s = new float[num_groups];
+        s.x_quantized = new QuantizedTensor();
+        s.x_quantized->q = vector<int8_t>(config.dim);
+        s.x_quantized->s = vector<float>(config.dim / GS);
     }
 
     void generate(const std::vector<int>& tokens, int max_step){
