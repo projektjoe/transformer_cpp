@@ -53,9 +53,9 @@ void quantize(QuantizedTensor *qx, float* x, int n) {
     }
 }
 
-void dequantize(QuantizedTensor *qx, float* x, int n) {
+void dequantize(QuantizedTensor &qx, float* x, int n) {
     for (int i = 0; i < n; i++) {
-        x[i] = qx->q[i] * qx->s[i / GS];
+        x[i] = qx.q[i] * qx.s[i / GS];
     }
 }
 
@@ -170,19 +170,19 @@ private:
     float* fnn_norm;
     float* norm;
     float* token_embeddings;
-    QuantizedTensor *q_tokens;
-    QuantizedTensor *wq;
-    QuantizedTensor *wk;
-    QuantizedTensor *wv;
-    QuantizedTensor *wo;
-    QuantizedTensor *w1;
-    QuantizedTensor *w2;
-    QuantizedTensor *w3;
-    QuantizedTensor *w_cls;
+    vector<QuantizedTensor> q_tokens;
+    vector<QuantizedTensor> wq; //vector of size n_layer, each entry is a (dim, dim)
+    vector<QuantizedTensor> wk;
+    vector<QuantizedTensor> wv;
+    vector<QuantizedTensor> wo;
+    vector<QuantizedTensor> w1;
+    vector<QuantizedTensor> w2;
+    vector<QuantizedTensor> w3;
+    vector<QuantizedTensor> w_cls;
 
 public:
-    QuantizedTensor* init_quantized_tensors(void** ptr, int n, int size_each) {
-        auto* res = new QuantizedTensor[n];
+    vector<QuantizedTensor> init_quantized_tensors(void** ptr, int n, int size_each) {
+        auto res = vector<QuantizedTensor>(n);
         char* p = static_cast<char*>(*ptr);
 
         for (int i = 0; i < n; i++) {
@@ -261,7 +261,7 @@ public:
 
         // dequantize token embedding table
         token_embeddings = new float[config.vocab_size * config.dim];
-        dequantize(q_tokens, token_embeddings, config.vocab_size * config.dim);
+        dequantize(q_tokens[0], token_embeddings, config.vocab_size * config.dim);
 
         wq = init_quantized_tensors(&ptr, config.n_layers, config.dim * (config.n_heads * head_size));
         wk = init_quantized_tensors(&ptr, config.n_layers, config.dim * (config.n_kv_heads * head_size));
