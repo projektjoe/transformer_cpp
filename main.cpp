@@ -136,7 +136,8 @@ typedef struct {
     int seq_len; // max sequence length
 } Config;
 
-typedef struct {
+class State {
+public:
     float* x;
     float* x_norm;
     float* q;
@@ -144,8 +145,27 @@ typedef struct {
     float* v;
     QuantizedTensor* x_quantized;
 
-} State;
+    State() = default;
 
+    State(int dim){
+        x = new float[dim ];
+        x_norm = new float[dim];
+        q = new float[dim ];
+        k = new float[dim ];
+        v = new float[dim];
+        x_quantized = new QuantizedTensor();
+    }
+
+    ~State() {
+        delete[] x;
+        delete[] x_norm;
+        delete[] q;
+        delete[] k;
+        delete[] v;
+        delete x_quantized;
+    }
+
+};
 class Transformer {
 private:
     Config config;
@@ -251,6 +271,8 @@ public:
         w3 = init_quantized_tensors(&ptr, config.n_layers, config.dim * config.hidden_dim);
 
         w_cls = shared_classifier ? q_tokens : init_quantized_tensors(&ptr, 1, config.dim * config.vocab_size);
+
+        s = State(config.dim);
     }
 
     void attention_head(){
@@ -297,8 +319,21 @@ public:
     int sample(std::vector<float> logits){
         return 2;
     }
+    void init_state(){
+        s.x = new float[config.dim];
+        s.x_norm = new float[config.dim];
+        s.q = new float[config.dim];
+        s.k = new float[config.dim];
+        s.v = new float[config.dim];
+        s.x_quantized = new QuantizedTensor();
+
+        int num_groups = config.dim / GS;
+        s.x_quantized->q = new int8_t[config.dim];
+        s.x_quantized->s = new float[num_groups];
+    }
 
     void generate(const std::vector<int>& tokens, int max_step){
+        init_state();
         //embedding
         std::vector<float> embedded(0);
         auto C = config.dim;
