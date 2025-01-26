@@ -180,6 +180,72 @@ def version2_export(model, filepath, group_size=64):
     # write to binary file
     out_file.close()
     print(f"wrote {filepath}")
+    
+def load_meta_model(model_path):
+    params_path = os.path.join(model_path, 'params.json')
+    with open(params_path) as f:
+        params = json.load(f)
+        print(params)
+
+    model_paths = sorted(list(Path(model_path).glob('consolidated.*.pth')))
+    models = [torch.load(p, map_location='cpu') for p in model_paths]
+
+    def concat_weights(models):
+        state_dict = {}
+        for name in list(models[0]):
+            tensors = [model[name] for model in models]
+            if len(tensors) == 1 or len(tensors[0].shape) == 1:
+                state_dict[name] = tensors[0]
+                continue
+            is_axis_1 = (
+                name.startswith('tok_embeddings.')
+                or name.endswith('.attention.wo.weight')
+                or name.endswith('.feed_forward.w2.weight')
+            )
+            axis = 1 if is_axis_1 else 0
+            state_dict[name] = torch.cat(tensors, dim=axis)
+            for model in models:
+                del model[name]
+        return state_dict
+
+    state_dict = concat_weights(models)
+    del models
+
+    # set ModelArgs
+    config = ModelArgs()
+    config.dim = params["dim"]
+    config.n_layers = params["n_layers"]
+    config.n_heads = params["n_heads"]
+    config.n_kv_heads = params.get('n_kv_heads') or params['n_heads']
+    config.multiple_of = params["multiple_of"]
+    config.norm_eps = params["norm_eps"]
+
+    config.vocab_size = state_dict['tok_embeddings.weight'].shape[0]
+    config.max_seq_len = 2048
+
+
+    # create a new Transformer object and set weights
+    model = Transformer(config)
+
+    model.tok_embeddings.weight = nn.Parameter(state_dict['tok_embeddings.weight'])
+    model.norm.weight = nn.Parameter(state_dict['norm.weight'])
+
+    for layer in model.layers:
+        i = layer.layer_id
+        layer.attention_norm.weight = nn.Parameter(state_dict[f'layers.{i}.attention_norm.weight'])
+        layer.attention.wq.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wq.weight'])
+        layer.attention.wk.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wk.weight'])
+        layer.attention.wv.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wv.weight'])
+        layer.attention.wo.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wo.weight'])
+        layer.ffn_norm.weight = nn.Parameter(state_dict[f'layers.{i}.ffn_norm.weight'])
+        layer.feed_forward.w1.weight = nn.Parameter(state_dict[f'layers.{i}.feed_forward.w1.weight'])
+        layer.feed_forward.w2.weight = nn.Parameter(state_dict[f'layers.{i}.feed_forward.w2.weight'])
+        layer.feed_forward.w3.weight = nn.Parameter(state_dict[f'layers.{i}.feed_forward.w3.weight'])
+
+    # final classifier
+    model.output.weight = nn.Parameter(state_dict['output.weight'])
+    model.eval()
+    return model
 
 def load_checkpoint(checkpoint):
     # load the provided model checkpoint
@@ -195,7 +261,9 @@ def load_checkpoint(checkpoint):
     model.eval()
     return model
 
-if __name__ == '__main__':
-    model = load_checkpoint('../llama2_model_weights/consolidated.00.pth')
+if __name__ == '__main__': 
+    
+    llama_model_path = 'llama2_weights/'
+    model = load_meta_model(llama_model_path)
 
-    version2_export(model, '../llama2_model_weights/model.bin')
+    version2_export(model, llama_model_path + 'llama2_q80.bin')
