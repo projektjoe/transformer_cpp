@@ -262,8 +262,11 @@ def load_checkpoint(checkpoint):
     return model
 
 if __name__ == '__main__': 
-    
-    llama_model_path = 'llama2_weights/'
-    model = load_meta_model(llama_model_path)
+    parser = argparse.ArgumentParser(description='Export LLaMA model weights')
+    parser.add_argument('model_folder_path', type=str, help='Path to the LLaMA model directory')
+    parser.add_argument('--output', type=str, help='Output path for the quantized model (default: {model_folder_path}/llama2_q80.bin)')
+    args = parser.parse_args()
 
-    version2_export(model, llama_model_path + 'llama2_q80.bin')
+    model = load_meta_model(args.model_path)
+    output_path = args.output or os.path.join(args.model_path, 'llama2_q80.bin')
+    version2_export(model, output_path)

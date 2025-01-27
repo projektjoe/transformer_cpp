@@ -508,19 +508,25 @@ public:
 };
 
 #ifndef TESTING
-int main()
+int main(int argc, char* argv[])
 {
-    std::string prompt = "hi";
-    //answer: hi, i'm alex. i'm a 20 year old student from the uk. i'm currently studying a bachelor of arts in english literature and creative writing. i'm a huge fan of the harry potter series, and i'm currently writing a fanfiction based on the series. i'm also a huge fan of the lord of the rings series, and i'm currently writing a fanfiction based on the series.
+    if (argc != 4) {
+        std::cerr << "Usage: " << argv[0] << " <prompt> <tokenizer_path> <model_path>" << std::endl;
+        return 1;
+    }
 
-    Tokenizer tokenizer("../../../llama2_weights/tokenizer.bin", 32000);
+    std::string prompt = argv[1];
+    std::string tokenizer_path = argv[2];
+    std::string model_path = argv[3];
 
+    Tokenizer tokenizer(tokenizer_path, 32000);
     std::vector<int> tokens = tokenizer.encode(prompt, 1, 0);
 
-
     auto* transformer = new Transformer();
-    transformer->load_weights("../../../llama2_weights/llama2_q80.bin");
-    transformer->generate(tokens, 256, tokenizer);//make tokenizr part of transformer?
+    transformer->load_weights(model_path);
+    transformer->generate(tokens, 256, tokenizer);
 
+    return 0;
 }
+
 #endif
