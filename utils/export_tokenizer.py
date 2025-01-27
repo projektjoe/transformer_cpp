@@ -70,5 +70,16 @@ class Tokenizer:
                 f.write(bytes)
 
 if __name__ == "__main__":
-    t = Tokenizer("../llama2_model_weights/tokenizer.model")
+    parser = argparse.ArgumentParser(description='Export tokenizer model to binary format')
+    parser.add_argument('--input', type=str, required=True,
+                      help='Path to input tokenizer.model file')
+    parser.add_argument('--output', type=str,
+                      help='Path to output .bin file (defaults to same location as input but with .bin extension)')
+    
+    args = parser.parse_args()
+    
+    # If no output specified, replace .model with .bin in the input path
+    output_path = args.output if args.output else args.input.replace('.model', '.bin')
+    
+    t = Tokenizer(args.input)
     t.export()
